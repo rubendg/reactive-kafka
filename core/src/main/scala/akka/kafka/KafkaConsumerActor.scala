@@ -155,28 +155,25 @@ private[kafka] class KafkaConsumerActor[K, V](settings: ConsumerSettings[K, V])
       consumer.poll(0)
       val assignedTopicPartitions = consumer.assignment()
 
-      // Get offset for a given timestamp for each topic/partition couple
-      val timestampsToSearch = assignedTopicPartitions.asScala.map(
-        partition =>
-          (new TopicPartition(partition.topic(), partition.partition()), timestamp)
-      ).toMap
+      val topicPartitionToOffsetAndTimestamp = {
+        val timestampsToSearch = assignedTopicPartitions.asScala
+          .map(_ -> long2Long(timestamp))
+          .toMap.asJava
 
-      assignedTopicPartitions.asScala.map(
-        element => {
-          val topicPartitionToOffsetAndTimestamp = consumer.offsetsForTimes(timestampsToSearch.mapValues(long2Long(_)).asJava)
-          val topicPartitionWithOffset = topicPartitionToOffsetAndTimestamp.asScala.map(
-            element =>
-              (element._1, element._2.offset())
-          )
-          topicPartitionWithOffset.foreach(
-            element =>
-              consumer.seek(element._1, element._2)
-          )
-        }
+        consumer.offsetsForTimes(timestampsToSearch)
+      }
+
+      val topicPartitionWithOffset = topicPartitionToOffsetAndTimestamp.asScala.map(
+        element =>
+          (element._1, element._2.offset())
       )
+
+      topicPartitionWithOffset.foreach(element => consumer.seek(element._1, element._2))
+
     case Subscribe(topics, listener) =>
       scheduleFirstPollTask()
       consumer.subscribe(topics.toList.asJava, new WrappedAutoPausedListener(consumer, listener))
+
     case SubscribePattern(pattern, listener) =>
       scheduleFirstPollTask()
       consumer.subscribe(Pattern.compile(pattern), new WrappedAutoPausedListener(consumer, listener))
