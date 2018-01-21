@@ -155,20 +155,19 @@ private[kafka] class KafkaConsumerActor[K, V](settings: ConsumerSettings[K, V])
       consumer.poll(0)
       val assignedTopicPartitions = consumer.assignment()
 
-      val topicPartitionToOffsetAndTimestamp = {
-        val timestampsToSearch = assignedTopicPartitions.asScala
-          .map(_ -> long2Long(timestamp))
-          .toMap.asJava
+      val timestampsToSearch = assignedTopicPartitions.asScala
+        .map(_ -> long2Long(timestamp))
+        .toMap.asJava
 
-        consumer.offsetsForTimes(timestampsToSearch)
+      val topicPartitionToOffsetAndTimestamp = consumer.offsetsForTimes(timestampsToSearch)
+
+      topicPartitionToOffsetAndTimestamp.asScala.foreach {
+        case (tp, oat: OffsetAndTimestamp) =>
+          val offset = oat.offset()
+          val ts = oat.timestamp()
+          log.debug("Seeking to offset {} from topic {} for timestamp {}", offset, tp, ts)
+          consumer.seek(tp, offset)
       }
-
-      val topicPartitionWithOffset = topicPartitionToOffsetAndTimestamp.asScala.map(
-        element =>
-          (element._1, element._2.offset())
-      )
-
-      topicPartitionWithOffset.foreach(element => consumer.seek(element._1, element._2))
 
     case Subscribe(topics, listener) =>
       scheduleFirstPollTask()
